@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 const app = express();
 const port = process.env.PORT || 3000;
@@ -31,7 +31,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
     try {
-     
+
 
         const db = client.db("bookCourier");
         const booksCollection = db.collection("books");
@@ -45,10 +45,20 @@ async function run() {
 
         app.get("/books", async (req, res) => {
             // const query = req.query;
-             const result = await booksCollection.find().toArray()
+            const result = await booksCollection.find().toArray()
 
             res.send(result)
         });
+
+        app.get("/books/:id", async (req, res) => {
+            const { id } = req.params;
+            const objectId = new ObjectId(id)
+            const result = await booksCollection.findOne({ _id: objectId })
+            res.send({
+                success: true,
+                result
+            });
+        })
 
 
         await client.db("admin").command({ ping: 1 });

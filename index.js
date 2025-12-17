@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
+const stripe = require('stripe')(process.env.STRIPE_API_KEY)
 const app = express();
 const port = process.env.PORT || 3000;
 /* Firebase Admin */
@@ -58,6 +59,37 @@ async function run() {
                 success: true,
                 result
             });
+        })
+
+        // stripe 
+        app.post('/create-checkout-seassion', async (req, res) => {
+            const paymentInfo = req.body;
+            console.log(paymentInfo)
+
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'usd',
+                            product_data: {
+                                name: paymentInfo?.name,
+                                images: [paymentInfo?.image]
+                            },
+                            unit_amount: paymentInfo?.price * 100
+                        },
+                        quantity: paymentInfo?.quantity,
+                    },
+                ],
+                customer_email: paymentInfo?.customer?.email,
+                mode: 'payment',
+                metadata: {
+                    bookId: paymentInfo?.bookID,
+                    customer: paymentInfo?.customer?.email
+                },
+                success_url: `${process.env.CLIENT_DOMAIN}/payment-success`,
+                cancel_url: `${process.env.CLIENT_DOMAIN}/books/${paymentInfo?.bookID}`
+            })
+            res.send({ url: session.url })
         })
 
 

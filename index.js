@@ -70,13 +70,26 @@ async function run() {
         // order store  api
         app.post('/orders', async (req, res) => {
             const bookOrder = req.body;
-            const result = await ordersCollection.insertOne(bookOrder)
-            res.send(result)
-        })
+
+            const result = await ordersCollection.insertOne({ ...bookOrder, createdAt: new Date(), });
+
+            res.status(201).send({
+                success: true,
+                message: "Order placed successfully",
+                orderId: result.insertedId,
+            });
+        });
 
         // order get api
         app.get('/orders', async (req, res) => {
-            const result = await ordersCollection.find().toArray()
+            const query = {};
+            const { email } = req.query;
+            if (email) {
+                query.customerEmail = email
+            }
+            const options = { sort: { createdAt: -1 } }
+            const cursor = ordersCollection.find(query, options)
+            const result = await cursor.toArray()
             res.send(result)
         })
 
@@ -91,8 +104,8 @@ async function run() {
                         price_data: {
                             currency: 'usd',
                             product_data: {
-                                name: paymentInfo?.name,
-                                images: [paymentInfo?.image]
+                                name: paymentInfo?.bookName,
+                                images: [paymentInfo?.bookImg]
                             },
                             unit_amount: paymentInfo?.price * 100
                         },
@@ -102,7 +115,7 @@ async function run() {
                 customer_email: paymentInfo?.customer?.email,
                 mode: 'payment',
                 metadata: {
-                    bookId: paymentInfo?.bookID,
+                    bookId: paymentInfo?.bookId,
                     customer: paymentInfo?.customer?.email
                 },
                 success_url: `${process.env.CLIENT_DOMAIN}/payment-success`,

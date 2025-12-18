@@ -36,6 +36,12 @@ async function run() {
 
         const db = client.db("bookCourier");
         const booksCollection = db.collection("books");
+        const ordersCollection = db.collection("orders")
+
+
+
+
+
 
         /* Routes */
         app.post("/books", async (req, res) => {
@@ -59,6 +65,19 @@ async function run() {
                 success: true,
                 result
             });
+        })
+
+        // order store  api
+        app.post('/orders', async (req, res) => {
+            const bookOrder = req.body;
+            const result = await ordersCollection.insertOne(bookOrder)
+            res.send(result)
+        })
+
+        // order get api
+        app.get('/orders', async (req, res) => {
+            const result = await ordersCollection.find().toArray()
+            res.send(result)
         })
 
         // stripe 

@@ -19,8 +19,6 @@ admin.initializeApp({
 app.use(express.json());
 app.use(cors());
 
-
-
 /* MongoDB */
 const client = new MongoClient(process.env.MONGODB_URI, {
     serverApi: {
@@ -32,18 +30,11 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
     try {
-
-
         const db = client.db("bookCourier");
         const booksCollection = db.collection("books");
         const ordersCollection = db.collection("orders")
+        const paymentCollection = db.collection("payments")
 
-
-
-
-
-
-        /* Routes */
         app.post("/books", async (req, res) => {
             const book = req.body;
             const result = await booksCollection.insertOne(book);
@@ -93,10 +84,44 @@ async function run() {
             res.send(result)
         })
 
+
+        // get all add book by liberian  with email
+        app.get('/my-inventory', async (req, res) => {
+            const { email } = req.query;
+
+            if (!email) {
+                return res.status(400).send({ message: 'Email required' });
+            }
+
+            const result = await booksCollection
+                .find({ 'librarian.email': email })
+                .sort({ createdAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
+        // get all orders for for liberian  by email
+        app.get('/manage-books', async (req, res) => {
+            const { email } = req.query;
+
+            if (!email) {
+                return res.status(400).send({ message: 'Email required' });
+            }
+
+            const result = await ordersCollection
+                .find({ librarian: email })
+                .sort({ createdAt: -1 })
+                .toArray();
+
+            res.send(result);
+        });
+
         // stripe 
         app.post('/create-checkout-seassion', async (req, res) => {
-            const paymentInfo = req.body;
-            console.log(paymentInfo)
+            const orderInfo = req.body;
+            // console.log("_______SESSION DATA_______",session)
+            console.log("------------------------------All order Info From server------------------", orderInfo)
 
             const session = await stripe.checkout.sessions.create({
                 line_items: [
@@ -104,24 +129,82 @@ async function run() {
                         price_data: {
                             currency: 'usd',
                             product_data: {
-                                name: paymentInfo?.bookName,
-                                images: [paymentInfo?.bookImg]
+                                name: orderInfo?.bookName,
+                                images: [orderInfo?.bookImg]
                             },
-                            unit_amount: paymentInfo?.price * 100
+                            unit_amount: orderInfo?.price * 100
                         },
-                        quantity: paymentInfo?.quantity,
+                        quantity: 1,
                     },
                 ],
-                customer_email: paymentInfo?.customer?.email,
+                customer_email: orderInfo.customer.customerEmail,
                 mode: 'payment',
                 metadata: {
-                    bookId: paymentInfo?.bookId,
-                    customer: paymentInfo?.customer?.email
+                    bookId: orderInfo.bookId,
+                    bookName: orderInfo.bookName,
+                    price: orderInfo.price,
+                    customerEmail: orderInfo.customer.customerEmail,
+                    librarian: orderInfo.librarian,
+                    writtenBy: orderInfo.writtenBy,
+                    category: orderInfo.category
                 },
-                success_url: `${process.env.CLIENT_DOMAIN}/payment-success`,
-                cancel_url: `${process.env.CLIENT_DOMAIN}/books/${paymentInfo?.bookID}`
+                success_url: `${process.env.CLIENT_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.CLIENT_DOMAIN}/books/${orderInfo?.bookId}`
             })
             res.send({ url: session.url })
+        })
+
+        // from video 
+        app.post('/payment-success', async (req, res) => {
+            const { sessionId } = req.body
+            const session = await stripe.checkout.sessions.retrieve(sessionId)
+
+            console.log(session)
+
+            const book = await ordersCollection.findOne({
+                _id: new ObjectId(session.metadata.bookId)
+            })
+
+            const inOrder = await paymentCollection.findOne({
+                transactionId: session.payment_intent
+            })
+            console.log('order transcation id', inOrder)
+
+
+            if (session.status === 'complete' && book && !inOrder) {
+                const paymentInfo = {
+                    bookId: session.metadata.bookId,
+                    transactionId: session.payment_intent,
+                    customer: session.customer_email,
+                    status: 'pending',
+                    librarian: session.metadata.librarian,
+                    name: session.metadata.bookName,
+                    quantity: 1,
+                    price: session.amount_total / 100
+                }
+
+
+                // result
+                // console.log("---------------------All payment Info Here------------------", paymentInfo)
+                const result = await paymentCollection.insertOne(paymentInfo)
+                const updateResult = await booksCollection.updateOne(
+                    { name: session.metadata.bookName },
+                    { $inc: { quantity: -1 } }
+                );
+
+                return res.send({
+                    transactionId: session.payment_intent,
+                    orderId: result.insertedId
+                })
+            }
+
+
+
+            res.send({
+                transactionId: session.payment_intent,
+                orderId: order._id
+            })
+
         })
 
 

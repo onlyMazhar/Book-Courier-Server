@@ -17,7 +17,12 @@ admin.initializeApp({
 
 /*  Middleware */
 app.use(express.json());
-app.use(cors());
+app.use(
+    cors({
+        origin: 'http://localhost:5173',
+        credentials: true,
+    })
+);
 
 /* MongoDB */
 const client = new MongoClient(process.env.MONGODB_URI, {
@@ -228,12 +233,37 @@ async function run() {
 
         app.post('/user', async (req, res) => {
             const userData = req.body
+            userData.created_at = new Date().toISOString()
+            userData.last_loggedIn = new Date().toISOString()
+            userData.role = 'user'
+
+            const query = { email: userData.email }
+
+            const doesExists = await usersCollection.findOne(query)
+            console.log("User Already exists-------->>>>> ", !!doesExists)
+
+            if (doesExists) {
+                console.log("Updating User Info...............")
+                const result = await usersCollection.updateOne(query, {
+                    $set: {
+                        last_loggedIn: new Date().toISOString()
+                    }
+                })
+                return res.send(result)
+            }
+            console.log("saving new User info..............")
             const result = await usersCollection.insertOne(userData)
 
             res.send(result)
         })
 
 
+        // get user's role
+        app.get('/user/role/:email', async (req, res) => {
+            const email = req.params.email
+            const result = await usersCollection.findOne({ email })
+            res.send({ role: result?.role })
+        })
 
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");

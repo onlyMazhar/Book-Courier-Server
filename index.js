@@ -183,7 +183,6 @@ async function run() {
                     price: session.amount_total / 100
                 }
 
-
                 // result
                 // console.log("---------------------All payment Info Here------------------", paymentInfo)
                 const result = await paymentCollection.insertOne(paymentInfo)
@@ -201,11 +200,29 @@ async function run() {
 
 
             res.send({
+                Message: 'alreday exist in order list',
                 transactionId: session.payment_intent,
-                orderId: order._id
+                orderId: inOrder._id
             })
 
         })
+
+        // get all invoices (payments) for a customer
+        app.get('/my-invoices', async (req, res) => {
+            const { email } = req.query;
+
+            if (!email) {
+                return res.status(400).send({ message: 'Email is required' });
+            }
+
+            const result = await paymentCollection
+                .find({ customer: email })
+                .sort({ _id: -1 }) // latest first
+                .toArray();
+
+            res.send(result);
+        });
+
 
 
         await client.db("admin").command({ ping: 1 });

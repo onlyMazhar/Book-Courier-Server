@@ -34,6 +34,7 @@ async function run() {
         const booksCollection = db.collection("books");
         const ordersCollection = db.collection("orders")
         const paymentCollection = db.collection("payments")
+        const usersCollection = db.collection("users")
 
         app.post("/books", async (req, res) => {
             const book = req.body;
@@ -85,8 +86,8 @@ async function run() {
         })
 
 
-        // get all add book by liberian  with email
-        app.get('/my-inventory', async (req, res) => {
+        // get all add book by Librarian   with email
+        app.get('/my-books', async (req, res) => {
             const { email } = req.query;
 
             if (!email) {
@@ -101,8 +102,8 @@ async function run() {
             res.send(result);
         });
 
-        // get all orders for for liberian  by email
-        app.get('/manage-books', async (req, res) => {
+        // get all orders for for Librarian   by email
+        app.get('/manage-orders', async (req, res) => {
             const { email } = req.query;
 
             if (!email) {
@@ -168,7 +169,7 @@ async function run() {
             const inOrder = await paymentCollection.findOne({
                 transactionId: session.payment_intent
             })
-            console.log('order transcation id', inOrder)
+            // console.log('order transcation id', inOrder)
 
 
             if (session.status === 'complete' && book && !inOrder) {
@@ -180,7 +181,8 @@ async function run() {
                     librarian: session.metadata.librarian,
                     name: session.metadata.bookName,
                     quantity: 1,
-                    price: session.amount_total / 100
+                    price: session.amount_total / 100,
+                    createdAt: new Date()
                 }
 
                 // result
@@ -222,6 +224,14 @@ async function run() {
 
             res.send(result);
         });
+
+
+        app.post('/user', async (req, res) => {
+            const userData = req.body
+            const result = await usersCollection.insertOne(userData)
+
+            res.send(result)
+        })
 
 
 

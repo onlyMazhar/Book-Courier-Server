@@ -19,6 +19,7 @@ admin.initializeApp({
 app.use(express.json());
 app.use(
     cors({
+        // origin: 'https://voluble-basbousa-85ef54.netlify.app',
         origin: 'http://localhost:5173',
         credentials: true,
     })
@@ -40,6 +41,22 @@ async function run() {
         const ordersCollection = db.collection("orders")
         const paymentCollection = db.collection("payments")
         const usersCollection = db.collection("users")
+        /* ================= ADMIN VERIFY MIDDLEWARE ================= */
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.headers.email;
+
+            if (!email) {
+                return res.status(401).send({ message: 'Unauthorized access' });
+            }
+
+            const user = await usersCollection.findOne({ email });
+
+            if (user?.role !== 'admin') {
+                return res.status(403).send({ message: 'Forbidden access' });
+            }
+
+            next();
+        };
 
         app.post("/books", async (req, res) => {
             const book = req.body;
@@ -54,6 +71,12 @@ async function run() {
             res.send(result)
         });
 
+        //  Latest books
+        app.get("/latest-books", async (req, res) => {
+            const result = await booksCollection.find().sort({ _id: -1 }).limit(6).toArray();
+            res.send(result);
+        });
+
         app.get("/books/:id", async (req, res) => {
             const { id } = req.params;
             const objectId = new ObjectId(id)
@@ -63,6 +86,8 @@ async function run() {
                 result
             });
         })
+
+
 
         // order store  api
         app.post('/orders', async (req, res) => {
@@ -265,8 +290,32 @@ async function run() {
             res.send({ role: result?.role })
         })
 
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        app.get('/admin/users', verifyAdmin, async (req, res) => {
+            const users = await usersCollection.find().toArray();
+            res.send(users);
+        });
+
+        // update user role (admin only)
+        app.patch('/admin/user/role/:id', verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;
+
+            if (!['admin', 'librarian'].includes(role)) {
+                return res.status(400).send({ message: 'Invalid role' });
+            }
+
+            const result = await usersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { role } }
+            );
+
+            res.send(result);
+        });
+
+        /* ================================================= */
+
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
     } finally {
         // do not close client

@@ -41,6 +41,11 @@ async function run() {
         const ordersCollection = db.collection("orders")
         const paymentCollection = db.collection("payments")
         const usersCollection = db.collection("users")
+        const wishlistCollection = db.collection("wishlis")
+
+
+
+
         /* ================= ADMIN VERIFY MIDDLEWARE ================= */
         const verifyAdmin = async (req, res, next) => {
             const email = req.headers.email;
@@ -58,6 +63,10 @@ async function run() {
             next();
         };
 
+
+
+
+
         app.post("/books", async (req, res) => {
             const book = req.body;
             const result = await booksCollection.insertOne(book);
@@ -65,10 +74,10 @@ async function run() {
         });
 
         app.get("/books", async (req, res) => {
-            // const query = req.query;
-            const result = await booksCollection.find().toArray()
-
-            res.send(result)
+            const result = await booksCollection
+                .find({ status: 'published' })
+                .toArray();
+            res.send(result);
         });
 
         //  Latest books
@@ -87,13 +96,52 @@ async function run() {
             });
         })
 
+        // get single book for edit
+        app.get('/books/edit/:id', async (req, res) => {
+            const book = await booksCollection.findOne({
+                _id: new ObjectId(req.params.id)
+            });
+            res.send(book);
+        });
+
+        // update book (no delete)
+        app.patch('/books/edit/:id', async (req, res) => {
+            const updatedData = req.body;
+
+            delete updatedData._id; // safety
+
+            const result = await booksCollection.updateOne(
+                { _id: new ObjectId(req.params.id) },
+                { $set: updatedData }
+            );
+
+            res.send(result);
+        });
+
+
+        app.patch('/orders/:id/cancel', async (req, res) => {
+            const { id } = req.params;
+            const result = await ordersCollection.updateOne(
+                { _id: new ObjectId(id), status: 'pending' },
+                { $set: { status: 'cancelled' } }
+            );
+            res.send(result);
+        });
+
+
+
 
 
         // order store  api
         app.post('/orders', async (req, res) => {
             const bookOrder = req.body;
 
-            const result = await ordersCollection.insertOne({ ...bookOrder, createdAt: new Date(), });
+            const result = await ordersCollection.insertOne({
+                ...bookOrder,
+                createdAt: new Date(),
+                status: 'pending',
+                paymentStatus: 'unpaid',
+            });
 
             res.status(201).send({
                 success: true,
@@ -114,6 +162,107 @@ async function run() {
             const result = await cursor.toArray()
             res.send(result)
         })
+
+        // cancel orders ( Users only )
+        app.patch('/orders/cancel/:id', async (req, res) => {
+            const { id } = req.params;
+
+            const order = await ordersCollection.findOne({ _id: new ObjectId(id) });
+
+            if (!order) {
+                return res.status(404).send({ message: 'Order not found' });
+            }
+
+            if (order.status !== 'pending') {
+                return res.status(400).send({ message: 'Only pending orders can be cancelled' });
+            }
+
+            const result = await ordersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: 'cancelled',
+                        paymentStatus: 'cancelled'
+                    }
+                }
+            );
+
+            res.send({ success: true, result });
+        });
+
+        // const ordersCollection = db.collection("orders"); // make sure this is defined
+
+        // Update order status
+        app.patch('/orders/:id/status', async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+
+            if (!['pending', 'shipped', 'delivered'].includes(status)) {
+                return res.status(400).send({ message: 'Invalid status' });
+            }
+
+            try {
+                const result = await ordersCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { status } }
+                );
+
+                if (result.matchedCount === 0) {
+                    return res.status(404).send({ message: 'Order not found' });
+                }
+
+                res.send({ success: true, message: 'Order status updated', status });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Server error' });
+            }
+        });
+
+        // Cancel an order
+        app.patch('/orders/:id/cancel', async (req, res) => {
+            const { id } = req.params;
+
+            try {
+                const result = await ordersCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { status: 'cancelled' } }
+                );
+
+                if (result.matchedCount === 0) {
+                    return res.status(404).send({ message: 'Order not found' });
+                }
+
+                res.send({ success: true, message: 'Order cancelled', status: 'cancelled' });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ message: 'Server error' });
+            }
+        });
+
+        app.post('/wishlist', async (req, res) => {
+            const item = req.body;
+            // Check if already exists
+            const query = { bookId: item.bookId, userEmail: item.userEmail };
+            const existing = await wishlistCollection.findOne(query);
+            if (existing) {
+                return res.status(400).send({ message: "Book already in wishlist" });
+            }
+            const result = await wishlistCollection.insertOne(item);
+            res.send(result);
+        });
+
+        // Get user-specific wishlist
+        app.get('/wishlist/:email', async (req, res) => {
+            const email = req.params.email;
+            const result = await wishlistCollection.find({ userEmail: email }).toArray();
+            res.send(result);
+        });
+
+
+
+
+
+
 
 
         // get all add book by Librarian   with email
@@ -147,6 +296,25 @@ async function run() {
 
             res.send(result);
         });
+        // update book publish status (librarian only)
+        app.patch('/books/status/:id', async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+
+            if (!['published', 'unpublished'].includes(status)) {
+                return res.status(400).send({ message: 'Invalid status' });
+            }
+
+            const result = await booksCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status } }
+            );
+
+            res.send(result);
+        });
+
+
+
 
         // stripe 
         app.post('/create-checkout-seassion', async (req, res) => {
@@ -222,11 +390,21 @@ async function run() {
                     { name: session.metadata.bookName },
                     { $inc: { quantity: -1 } }
                 );
+                await ordersCollection.updateOne(
+                    { _id: new ObjectId(session.metadata.bookId) },
+                    {
+                        $set: {
+                            status: 'paid',
+                            paymentStatus: 'paid'
+                        }
+                    }
+                );
 
                 return res.send({
                     transactionId: session.payment_intent,
                     orderId: result.insertedId
                 })
+
             }
 
 
@@ -313,6 +491,40 @@ async function run() {
         });
 
         /* ================================================= */
+
+
+
+        app.get('/admin/books', verifyAdmin, async (req, res) => {
+            const books = await booksCollection.find().toArray();
+            res.send(books);
+        });
+
+        app.patch('/admin/book/:id/status', verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+
+            if (!['published', 'unpublished'].includes(status)) {
+                return res.status(400).send({ message: 'Invalid status' });
+            }
+
+            const result = await booksCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status } }
+            );
+            res.send(result);
+        });
+
+        app.delete('/admin/book/:id', verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+
+            // Delete book
+            await booksCollection.deleteOne({ _id: new ObjectId(id) });
+
+            // Delete related orders
+            await ordersCollection.deleteMany({ bookId: id });
+
+            res.send({ message: 'Book and related orders deleted' });
+        });
 
         // await client.db("admin").command({ ping: 1 });
         // console.log("Pinged your deployment. You successfully connected to MongoDB!");
